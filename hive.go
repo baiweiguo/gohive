@@ -107,10 +107,11 @@ func ConnectZookeeper(hosts string, auth string,
 	if err != nil {
 		return nil, err
 	}
+	defer zkConn.Close()
 
 	hsInfos, _, err := zkConn.Children("/" + configuration.ZookeeperNamespace)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	if len(hsInfos) > 0 {
 		nodes := parseHiveServer2Info(hsInfos)
@@ -213,19 +214,16 @@ func innerConnect(ctx context.Context, host string, port int, auth string,
 		}
 	} else {
 		if configuration.TLSConfig != nil {
-			socket, err = thrift.NewTSSLSocketConf(addr, &thrift.TConfiguration{
+			socket = thrift.NewTSSLSocketConf(addr, &thrift.TConfiguration{
 				ConnectTimeout: configuration.ConnectTimeout,
 				SocketTimeout:  configuration.SocketTimeout,
 				TLSConfig:      configuration.TLSConfig,
 			})
 		} else {
-			socket, err = thrift.NewTSocketConf(addr, &thrift.TConfiguration{
+			socket = thrift.NewTSocketConf(addr, &thrift.TConfiguration{
 				ConnectTimeout: configuration.ConnectTimeout,
 				SocketTimeout:  configuration.SocketTimeout,
 			})
-		}
-		if err != nil {
-			return
 		}
 		if err = socket.Open(); err != nil {
 			return
@@ -596,10 +594,11 @@ func (c *Cursor) executeAsync(ctx context.Context, query string) {
 		return
 	}
 	if !success(safeStatus(responseExecute.GetStatus())) {
+		status := safeStatus(responseExecute.GetStatus())
 		c.Err = HiveError{
-			error:     errors.New("Error while executing query: " + safeStatus(responseExecute.GetStatus()).String()),
-			Message:   *safeStatus(responseExecute.GetStatus()).ErrorMessage,
-			ErrorCode: int(*safeStatus(responseExecute.GetStatus()).ErrorCode),
+			error:     errors.New("Error while executing query: " + status.String()),
+			Message:   status.GetErrorMessage(),
+			ErrorCode: int(status.GetErrorCode()),
 		}
 		return
 	}
@@ -640,7 +639,7 @@ func (c *Cursor) FetchLogs() []string {
 	logRequest.FetchType = 1
 
 	resp, err := c.conn.client.FetchResults(context.Background(), logRequest)
-	if err != nil {
+	if err != nil || resp == nil || resp.Results == nil {
 		c.Err = err
 		return nil
 	}
