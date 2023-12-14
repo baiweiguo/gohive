@@ -21,6 +21,7 @@ import (
 	"github.com/beltran/gosasl"
 	"github.com/go-zookeeper/zk"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 const DEFAULT_FETCH_SIZE int64 = 1000
@@ -1079,6 +1080,11 @@ func (c *Cursor) pollUntilData(ctx context.Context, n int) (err error) {
 	var stopLock sync.Mutex
 	var done = false
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				zap.S().Errorf("hive hasMore:%+v", r)
+			}
+		}()
 		defer close(rowsAvailable)
 		for true {
 			stopLock.Lock()
